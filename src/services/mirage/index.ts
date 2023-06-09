@@ -1,0 +1,73 @@
+import {
+  ActiveModelSerializer,
+  createServer,
+  Factory,
+  Model,
+  Response,
+} from "miragejs";
+import { faker } from "@faker-js/faker";
+import { number } from "yup";
+
+type User = {
+  name: string;
+  email: string;
+  created_at: string;
+};
+
+export function makeServer() {
+  const server = createServer({
+    serializers: {
+      application: ActiveModelSerializer,
+    },
+
+    models: {
+      // Partial os usuários q serão salvos precisam conter algum dos campos do Type User, mas talvez não conter todos
+      user: Model.extend<Partial<User>>({}),
+    },
+
+    factories: {
+      user: Factory.extend({
+        name(index: number) {
+          return `User ${index + 1}`;
+        },
+        email() {
+          return faker.internet.email().toLowerCase();
+        },
+        createdAt() {
+          return faker.date.recent(10, new Date());
+        },
+      }),
+    },
+
+    seeds(server) {
+      // cria 200 usuários
+      server.createList("user", 200);
+    },
+
+    routes() {
+      this.namespace = "api";
+      // toda chamada ira demorar 750 milisegundos
+      this.timing = 750;
+      // extendendo a função de listagem, pois o mirage não retorna paginação
+      this.get("/users", function (schema, request) {
+        const { page = 1, per_page = 10 } = request.queryParams;
+
+        const total = schema.all("user").length;
+
+        const pageStart = (Number(page) - 1) * Number(per_page);
+        const pageEnd = pageStart + Number(per_page);
+
+        const users = this.serialize(schema.all("user"))
+          .users.sort((a, b) => a.createdAt - b.createdAt)
+          .slice(pageStart, pageEnd);
+
+        return new Response(200, { "x-total-count": String(total) }, { users });
+      });
+      this.post("/users");
+      this.namespace = "";
+      this.passthrough();
+    },
+  });
+
+  return server;
+}
